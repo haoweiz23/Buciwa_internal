@@ -59,9 +59,9 @@
                 @click="removeFromBlank(0)"
                 :class="[
                   'inline-block min-w-[80px] px-3 py-1 mx-1 rounded-lg border-2 transition-all cursor-pointer',
-                  filledBlanks[0] 
-                    ? (isAnswered 
-                        ? (correctAnswers.includes(filledBlanks[0]) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
+                  filledBlanks[0]
+                    ? (isAnswered
+                        ? (isBlankCorrect(0) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
                         : 'border-mint-500 bg-mint-50 text-mint-700 hover:border-red-400')
                     : 'border-gray-300 bg-gray-50 text-gray-400'
                 ]"
@@ -74,9 +74,9 @@
                 @click="removeFromBlank(1)"
                 :class="[
                   'inline-block min-w-[80px] px-3 py-1 mx-1 rounded-lg border-2 transition-all cursor-pointer',
-                  filledBlanks[1] 
-                    ? (isAnswered 
-                        ? (correctAnswers.includes(filledBlanks[1]) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
+                  filledBlanks[1]
+                    ? (isAnswered
+                        ? (isBlankCorrect(1) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
                         : 'border-mint-500 bg-mint-50 text-mint-700 hover:border-red-400')
                     : 'border-gray-300 bg-gray-50 text-gray-400'
                 ]"
@@ -91,9 +91,9 @@
                 @click="removeFromBlank(0)"
                 :class="[
                   'inline-block min-w-[80px] px-3 py-1 mx-1 rounded-lg border-2 transition-all cursor-pointer',
-                  filledBlanks[0] 
-                    ? (isAnswered 
-                        ? (correctAnswers.includes(filledBlanks[0]) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
+                  filledBlanks[0]
+                    ? (isAnswered
+                        ? (isBlankCorrect(0) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
                         : 'border-mint-500 bg-mint-50 text-mint-700 hover:border-red-400')
                     : 'border-gray-300 bg-gray-50 text-gray-400'
                 ]"
@@ -105,9 +105,9 @@
                 @click="removeFromBlank(1)"
                 :class="[
                   'inline-block min-w-[80px] px-3 py-1 mx-1 rounded-lg border-2 transition-all cursor-pointer',
-                  filledBlanks[1] 
-                    ? (isAnswered 
-                        ? (correctAnswers.includes(filledBlanks[1]) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
+                  filledBlanks[1]
+                    ? (isAnswered
+                        ? (isBlankCorrect(1) ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700')
                         : 'border-mint-500 bg-mint-50 text-mint-700 hover:border-red-400')
                     : 'border-gray-300 bg-gray-50 text-gray-400'
                 ]"
@@ -123,12 +123,14 @@
             <h4 class="font-medium text-gray-700 mb-2">正确答案：</h4>
             <div class="flex gap-4">
               <div class="flex-1 p-2 bg-green-50 rounded border border-green-200">
-                <span class="font-medium text-green-700">{{ currentQuestion.word1 }}</span>
-                <span class="text-sm text-gray-500 ml-2">{{ currentQuestion.word1_meaning || '' }}</span>
+                <span class="text-xs text-gray-400 mr-1">空1:</span>
+                <span class="font-medium text-green-700">{{ correctAnswerForBlank[0] }}</span>
+                <span class="text-sm text-gray-500 ml-2">{{ getWordMeaning(correctAnswerForBlank[0]) }}</span>
               </div>
               <div class="flex-1 p-2 bg-green-50 rounded border border-green-200">
-                <span class="font-medium text-green-700">{{ currentQuestion.word2 }}</span>
-                <span class="text-sm text-gray-500 ml-2">{{ currentQuestion.word2_meaning || '' }}</span>
+                <span class="text-xs text-gray-400 mr-1">空2:</span>
+                <span class="font-medium text-green-700">{{ correctAnswerForBlank[1] }}</span>
+                <span class="text-sm text-gray-500 ml-2">{{ getWordMeaning(correctAnswerForBlank[1]) }}</span>
               </div>
             </div>
           </div>
@@ -229,6 +231,69 @@ const shuffledOptions = computed(() => {
   return [...options].sort(() => Math.random() - 0.5)
 })
 
+// Parse the sentence_with_answers to determine which word goes in which blank position
+const correctAnswerForBlank = computed(() => {
+  if (!currentQuestion.value) return [null, null]
+  
+  const sentenceWithAnswers = currentQuestion.value.sentence_with_answers || ''
+  const sentence = currentQuestion.value.sentence || ''
+  const word1 = currentQuestion.value.word1
+  const word2 = currentQuestion.value.word2
+  
+  // If no sentence_with_answers, fall back to original order
+  if (!sentenceWithAnswers) {
+    return [word1, word2]
+  }
+  
+  // Split sentence by ___ to find the parts
+  const parts = sentence.split('___')
+  if (parts.length < 3) return [word1, word2] // fallback to original order
+  
+  // The middle part is the text between the two blanks
+  const middlePart = parts[1]
+  
+  // Find the middle part position in sentence_with_answers
+  const midIdx = sentenceWithAnswers.indexOf(middlePart)
+  
+  if (midIdx < 0) {
+    // Middle part not found, fall back to original order
+    return [word1, word2]
+  }
+  
+  // Find word positions in sentence_with_answers
+  const word1Index = sentenceWithAnswers.indexOf(word1)
+  const word2Index = sentenceWithAnswers.indexOf(word2)
+  
+  if (word1Index < 0 || word2Index < 0) {
+    // One or both words not found, fall back to original order
+    return [word1, word2]
+  }
+  
+  // Calculate end positions
+  const word1End = word1Index + word1.length
+  const word2End = word2Index + word2.length
+  const midEnd = midIdx + middlePart.length
+  
+  // Determine which word is before and which is after the middle part
+  // Word is before middle if it ends before middle starts
+  // Word is after middle if it starts after middle ends
+  const word1BeforeMiddle = word1End <= midIdx
+  const word1AfterMiddle = word1Index >= midEnd
+  const word2BeforeMiddle = word2End <= midIdx
+  const word2AfterMiddle = word2Index >= midEnd
+  
+  if (word1BeforeMiddle && word2AfterMiddle) {
+    // word1 is before middle, word2 is after
+    return [word1, word2]
+  } else if (word2BeforeMiddle && word1AfterMiddle) {
+    // word2 is before middle, word1 is after
+    return [word2, word1]
+  }
+  
+  // Fallback: use original order
+  return [word1, word2]
+})
+
 const correctAnswers = computed(() => {
   if (!currentQuestion.value) return []
   return [currentQuestion.value.word1, currentQuestion.value.word2]
@@ -236,6 +301,22 @@ const correctAnswers = computed(() => {
 
 const isOptionUsed = (word) => {
   return filledBlanks.value.includes(word)
+}
+
+// Check if a specific blank has the correct answer for that position
+const isBlankCorrect = (blankIndex) => {
+  if (!filledBlanks.value[blankIndex]) return false
+  return filledBlanks.value[blankIndex] === correctAnswerForBlank.value[blankIndex]
+}
+
+// Get the meaning for a word
+const getWordMeaning = (word) => {
+  if (!currentQuestion.value || !word) return ''
+  if (word === currentQuestion.value.word1) return currentQuestion.value.word1_meaning || ''
+  if (word === currentQuestion.value.word2) return currentQuestion.value.word2_meaning || ''
+  if (word === currentQuestion.value.distractor1) return currentQuestion.value.distractor1_meaning || ''
+  if (word === currentQuestion.value.distractor2) return currentQuestion.value.distractor2_meaning || ''
+  return ''
 }
 
 const selectOption = (option) => {
@@ -271,15 +352,16 @@ const checkAnswer = () => {
   isAnswered.value = true
   
   // Record result in sessionStorage
-  const isCorrect = correctAnswers.value.every(a => filledBlanks.value.includes(a))
+  // Use position-aware verification: each blank must have the correct word for that position
+  const isCorrect = isBlankCorrect(0) && isBlankCorrect(1)
   const storedResults = JSON.parse(sessionStorage.getItem('clozeResults') || '[]')
   storedResults.push({
     cloze_test_id: currentQuestion.value.id,
     sentence: currentQuestion.value.sentence,
     selected_answer1: filledBlanks.value[0],
     selected_answer2: filledBlanks.value[1],
-    correct_answer1: correctAnswers.value[0],
-    correct_answer2: correctAnswers.value[1],
+    correct_answer1: correctAnswerForBlank.value[0],
+    correct_answer2: correctAnswerForBlank.value[1],
     is_correct: isCorrect
   })
   sessionStorage.setItem('clozeResults', JSON.stringify(storedResults))

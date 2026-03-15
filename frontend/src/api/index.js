@@ -161,7 +161,10 @@ export const testApi = {
   getResults: () => api.get('/test/results'),
   
   // Get a specific test result
-  getResult: (id) => api.get(`/test/results/${id}`)
+  getResult: (id) => api.get(`/test/results/${id}`),
+  
+  // Delete a test result
+  deleteResult: (id) => api.delete(`/test/results/${id}`)
 }
 
 export default api

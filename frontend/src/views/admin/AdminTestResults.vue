@@ -4,8 +4,8 @@
     
     <!-- Results List -->
     <div v-if="results.length > 0" class="space-y-4">
-      <div 
-        v-for="result in results" 
+      <div
+        v-for="result in results"
         :key="result.id"
         class="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
       >
@@ -16,18 +16,30 @@
               {{ formatDate(result.created_at) }}
             </p>
           </div>
-          <div class="text-right">
-            <div class="text-2xl font-bold" :class="getScoreColor(result.score_percentage)">
-              {{ result.score_percentage.toFixed(0) }}%
+          <div class="flex items-start gap-4">
+            <div class="text-right">
+              <div class="text-2xl font-bold" :class="getScoreColor(result.score_percentage)">
+                {{ result.score_percentage.toFixed(0) }}%
+              </div>
+              <p class="text-sm text-gray-500">
+                {{ result.correct_answers }} / {{ result.total_questions }} 正确
+              </p>
             </div>
-            <p class="text-sm text-gray-500">
-              {{ result.correct_answers }} / {{ result.total_questions }} 正确
-            </p>
+            <!-- Delete button -->
+            <button
+              @click="confirmDelete(result)"
+              class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              title="删除"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
         
         <!-- Expand button -->
-        <button 
+        <button
           @click="toggleExpand(result.id)"
           class="mt-3 text-sm text-mint-600 hover:text-mint-700"
         >
@@ -149,6 +161,35 @@
     <div v-else class="text-center py-12">
       <p class="text-gray-500">暂无测验结果</p>
     </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div
+      v-if="showDeleteModal"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="showDeleteModal = false"
+    >
+      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">确认删除</h3>
+        <p class="text-gray-600 mb-6">
+          确定要删除测验结果"{{ resultToDelete?.quiz_set_name }}"吗？此操作无法撤销。
+        </p>
+        <div class="flex justify-end gap-3">
+          <button
+            @click="showDeleteModal = false"
+            class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            @click="deleteResult"
+            :disabled="isDeleting"
+            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
+          >
+            {{ isDeleting ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -158,6 +199,9 @@ import { testApi } from '../../api'
 
 const results = ref([])
 const expandedId = ref(null)
+const showDeleteModal = ref(false)
+const resultToDelete = ref(null)
+const isDeleting = ref(false)
 
 const fetchResults = async () => {
   try {
@@ -192,8 +236,8 @@ const getScoreColor = (percentage) => {
 const getWordResults = (result) => {
   if (!result.word_results) return []
   try {
-    return typeof result.word_results === 'string' 
-      ? JSON.parse(result.word_results) 
+    return typeof result.word_results === 'string'
+      ? JSON.parse(result.word_results)
       : result.word_results
   } catch {
     return []
@@ -219,6 +263,29 @@ const getWrongQuestions = (result) => {
       : result.wrong_questions
   } catch {
     return []
+  }
+}
+
+const confirmDelete = (result) => {
+  resultToDelete.value = result
+  showDeleteModal.value = true
+}
+
+const deleteResult = async () => {
+  if (!resultToDelete.value) return
+  
+  isDeleting.value = true
+  try {
+    await testApi.deleteResult(resultToDelete.value.id)
+    // Remove from local list
+    results.value = results.value.filter(r => r.id !== resultToDelete.value.id)
+    showDeleteModal.value = false
+    resultToDelete.value = null
+  } catch (e) {
+    console.error('Failed to delete result:', e)
+    alert('删除失败，请重试')
+  } finally {
+    isDeleting.value = false
   }
 }
 

@@ -1081,6 +1081,22 @@ async def get_test_result(result_id: int, db: Session = Depends(get_db)):
     )
 
 
+@app.delete("/api/test/results/{result_id}")
+async def delete_test_result(result_id: int, db: Session = Depends(get_db)):
+    """删除测验结果"""
+    result = db.query(TestResult).filter(TestResult.id == result_id).first()
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="测验结果不存在"
+        )
+    
+    db.delete(result)
+    db.commit()
+    
+    return {"message": "测验结果已删除"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
