@@ -1,7 +1,18 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+
+
+class User(Base):
+    """管理员用户"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="admin")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class WordSet(Base):
@@ -37,19 +48,35 @@ class Word(Base):
 
 
 class ClozeTest(Base):
-    """Cloze test exercise with two words"""
+    """Cloze test exercise with four word options"""
     __tablename__ = "cloze_tests"
 
     id = Column(Integer, primary_key=True, index=True)
-    word1 = Column(String(100), nullable=False)  # First word
-    word2 = Column(String(100), nullable=False)  # Second word
-    word1_meaning = Column(String(500), nullable=True)  # Chinese meaning of word1
-    word2_meaning = Column(String(500), nullable=True)  # Chinese meaning of word2
-    sentence = Column(Text, nullable=False)  # Chinese sentence with blanks
-    sentence_with_answers = Column(Text, nullable=False)  # Sentence with words filled in
-    image_prompt = Column(Text, nullable=True)  # Image generation prompt
+    # 主要单词
+    word1 = Column(String(100), nullable=False)
+    word2 = Column(String(100), nullable=False)
+    word1_meaning = Column(String(500), nullable=True)
+    word2_meaning = Column(String(500), nullable=True)
+    
+    # 干扰选项
+    distractor1 = Column(String(100), nullable=True)
+    distractor2 = Column(String(100), nullable=True)
+    distractor1_meaning = Column(String(500), nullable=True)
+    distractor2_meaning = Column(String(500), nullable=True)
+    
+    # 中文句子
+    sentence = Column(Text, nullable=False)  # 中文句子（带空格）
+    sentence_with_answers = Column(Text, nullable=False)  # 中文句子（带答案）
+    
+    # 英文句子
+    sentence_en = Column(Text, nullable=True)  # 英文句子（带空格）
+    sentence_with_answers_en = Column(Text, nullable=True)  # 英文句子（带答案）
+    
+    # 图片
+    image_prompt = Column(Text, nullable=True)
     image_url = Column(String(500), nullable=True)
     image_local_path = Column(String(500), nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -68,3 +95,63 @@ class ListeningExercise(Base):
     audio_local_path = Column(String(500), nullable=True)  # Local audio file path
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class QuizSet(Base):
+    """题集"""
+    __tablename__ = "quiz_sets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=False)  # 是否为当前激活的测验题集
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联
+    word_set_items = relationship("QuizSetWordItem", back_populates="quiz_set", cascade="all, delete-orphan")
+    cloze_items = relationship("QuizSetClozeItem", back_populates="quiz_set", cascade="all, delete-orphan")
+
+
+class QuizSetWordItem(Base):
+    """题集中的单选题"""
+    __tablename__ = "quiz_set_word_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=False)
+    word_set_id = Column(Integer, ForeignKey("word_sets.id"), nullable=False)
+    order = Column(Integer, default=0)  # 题目顺序
+    
+    quiz_set = relationship("QuizSet", back_populates="word_set_items")
+    word_set = relationship("WordSet")
+
+
+class QuizSetClozeItem(Base):
+    """题集中的完形填空题"""
+    __tablename__ = "quiz_set_cloze_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=False)
+    cloze_test_id = Column(Integer, ForeignKey("cloze_tests.id"), nullable=False)
+    order = Column(Integer, default=0)  # 题目顺序
+    
+    quiz_set = relationship("QuizSet", back_populates="cloze_items")
+    cloze_test = relationship("ClozeTest")
+
+
+class TestResult(Base):
+    """测验结果"""
+    __tablename__ = "test_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=False)
+    quiz_set_name = Column(String(200), nullable=False)  # 保存题集名称快照
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False)
+    score_percentage = Column(Float, nullable=False)
+    word_results = Column(Text, nullable=True)  # JSON 存储单选题结果
+    cloze_results = Column(Text, nullable=True)  # JSON 存储完形填空结果
+    wrong_questions = Column(Text, nullable=True)  # JSON 存储错误题目列表
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    quiz_set = relationship("QuizSet")

@@ -2,31 +2,46 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import asyncio
 import os
 import random
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 from app.database import get_db, init_db
-from app.models import WordSet, Word, ClozeTest, ListeningExercise
+from app.models import (
+    User, WordSet, Word, ClozeTest, ListeningExercise,
+    QuizSet, QuizSetWordItem, QuizSetClozeItem, TestResult
+)
 from app.schemas import (
+    LoginRequest, LoginResponse, UserResponse,
     WordSetCreate, WordSetResponse, WordSetListResponse,
     WordResponse, GenerateWordRequest,
     ClozeTestCreate, ClozeTestResponse, ClozeTestListResponse,
-    ListeningExerciseCreate, ListeningExerciseResponse, ListeningExerciseListResponse
+    ListeningExerciseCreate, ListeningExerciseResponse, ListeningExerciseListResponse,
+    QuizSetCreate, QuizSetUpdate, QuizSetResponse, QuizSetListResponse,
+    QuizSetWordItemCreate, QuizSetClozeItemCreate,
+    QuizSetWordItemResponse, QuizSetClozeItemResponse,
+    ReorderItemsRequest,
+    TestResultCreate, TestResultResponse, TestResultListResponse,
+    ActiveTestResponse
 )
 from app.services import llm_service, image_service
 from app.services.tts_service import tts_service
 from app.config import get_settings
+from app.deps import (
+    require_auth, require_admin, init_admin_user,
+    verify_password, create_access_token
+)
 
 settings = get_settings()
 
 # Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
-    description="A word visual memory web application",
-    version="1.0.0"
+    description="A word visual memory web application with admin and user interfaces",
+    version="2.0.0"
 )
 
 # CORS middleware
@@ -53,6 +68,12 @@ executor = ThreadPoolExecutor(max_workers=4)
 async def startup_event():
     """Initialize database on startup"""
     init_db()
+    # Initialize default admin user
+    db = next(get_db())
+    try:
+        init_admin_user(db)
+    finally:
+        db.close()
 
 
 # ============== Helper Functions ==============
@@ -75,7 +96,35 @@ async def generate_image_async(prompt: str, word: str):
         }
 
 
-# ============== API Routes ==============
+# ============== Auth API Routes ==============
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """管理员登录"""
+    user = db.query(User).filter(User.username == request.username).first()
+    
+    if not user or not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误"
+        )
+    
+    access_token = create_access_token(data={"sub": user.username, "role": user.role})
+    
+    return LoginResponse(
+        access_token=access_token,
+        username=user.username,
+        role=user.role
+    )
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_current_user_info(current_user: User = Depends(require_auth)):
+    """获取当前用户信息"""
+    return current_user
+
+
+# ============== Common API Routes ==============
 
 # Common English words for random selection
 COMMON_WORDS = [
@@ -104,7 +153,7 @@ COMMON_WORDS = [
 
 @app.get("/")
 async def root():
-    return {"message": "Word Visual Memory API", "version": "1.0.0"}
+    return {"message": "Word Visual Memory API", "version": "2.0.0"}
 
 
 @app.get("/api/random-word")
@@ -113,6 +162,8 @@ async def get_random_word():
     word = random.choice(COMMON_WORDS)
     return {"word": word}
 
+
+# ============== Word Set API Routes ==============
 
 @app.get("/api/word-sets", response_model=List[WordSetListResponse])
 async def list_word_sets(db: Session = Depends(get_db)):
@@ -146,7 +197,7 @@ async def get_word_set(word_set_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/word-sets/generate", response_model=WordSetResponse)
-async def generate_word_set(request: GenerateWordRequest, db: Session = Depends(get_db)):
+async def generate_word_set(request: GenerateWordRequest, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """
     Generate a new word set with:
     - Main word (A)
@@ -205,7 +256,7 @@ async def generate_word_set(request: GenerateWordRequest, db: Session = Depends(
 
 
 @app.post("/api/words/{word_id}/regenerate-image", response_model=WordResponse)
-async def regenerate_word_image(word_id: int, db: Session = Depends(get_db)):
+async def regenerate_word_image(word_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Regenerate image for a specific word"""
     word = db.query(Word).filter(Word.id == word_id).first()
     if not word:
@@ -243,7 +294,7 @@ async def regenerate_word_image(word_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/word-sets/{word_set_id}/regenerate", response_model=WordSetResponse)
-async def regenerate_word_set(word_set_id: int, db: Session = Depends(get_db)):
+async def regenerate_word_set(word_set_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """
     Regenerate all words (B/C/D) and images for a word set.
     Keeps the main word (A) but generates new distractors.
@@ -303,7 +354,7 @@ async def regenerate_word_set(word_set_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/word-sets/{word_set_id}")
-async def delete_word_set(word_set_id: int, db: Session = Depends(get_db)):
+async def delete_word_set(word_set_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Delete a word set and all its words"""
     word_set = db.query(WordSet).filter(WordSet.id == word_set_id).first()
     if not word_set:
@@ -351,24 +402,36 @@ async def get_cloze_test(cloze_test_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/cloze-tests/generate", response_model=ClozeTestResponse)
-async def generate_cloze_test(request: ClozeTestCreate, db: Session = Depends(get_db)):
+async def generate_cloze_test(request: ClozeTestCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """
     Generate a new cloze test with:
     - Chinese sentence with two blanks
+    - English sentence with two blanks
+    - Two distractor words
     - Image based on the sentence
     """
     try:
-        # Step 1: Call LLM to generate cloze test content
-        llm_result = await run_sync(llm_service.generate_cloze_test, request.word1, request.word2)
+        # Step 1: Call LLM to generate cloze test content (with distractors and English sentence)
+        llm_result = await run_sync(llm_service.generate_cloze_test_with_distractors, request.word1, request.word2)
         
         # Step 2: Create cloze test in database
         cloze_test = ClozeTest(
             word1=request.word1,
             word2=request.word2,
-            sentence=llm_result["sentence"],
-            sentence_with_answers=llm_result["sentence_with_answers"],
             word1_meaning=llm_result.get("word1_meaning", ""),
             word2_meaning=llm_result.get("word2_meaning", ""),
+            # 干扰选项
+            distractor1=llm_result.get("distractor1", ""),
+            distractor2=llm_result.get("distractor2", ""),
+            distractor1_meaning=llm_result.get("distractor1_meaning", ""),
+            distractor2_meaning=llm_result.get("distractor2_meaning", ""),
+            # 中文句子
+            sentence=llm_result["sentence"],
+            sentence_with_answers=llm_result["sentence_with_answers"],
+            # 英文句子
+            sentence_en=llm_result.get("sentence_en", ""),
+            sentence_with_answers_en=llm_result.get("sentence_with_answers_en", ""),
+            # 图片
             image_prompt=llm_result["image_prompt"]
         )
         db.add(cloze_test)
@@ -395,7 +458,7 @@ async def generate_cloze_test(request: ClozeTestCreate, db: Session = Depends(ge
 
 
 @app.delete("/api/cloze-tests/{cloze_test_id}")
-async def delete_cloze_test(cloze_test_id: int, db: Session = Depends(get_db)):
+async def delete_cloze_test(cloze_test_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Delete a cloze test"""
     cloze_test = db.query(ClozeTest).filter(ClozeTest.id == cloze_test_id).first()
     if not cloze_test:
@@ -441,7 +504,7 @@ async def get_listening_exercise(exercise_id: int, db: Session = Depends(get_db)
 
 
 @app.post("/api/listening-exercises/generate", response_model=ListeningExerciseResponse)
-async def generate_listening_exercise(request: ListeningExerciseCreate, db: Session = Depends(get_db)):
+async def generate_listening_exercise(request: ListeningExerciseCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """
     Generate a new listening exercise with:
     - English text based on scene description
@@ -492,7 +555,7 @@ async def generate_listening_exercise(request: ListeningExerciseCreate, db: Sess
 
 
 @app.delete("/api/listening-exercises/{exercise_id}")
-async def delete_listening_exercise(exercise_id: int, db: Session = Depends(get_db)):
+async def delete_listening_exercise(exercise_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Delete a listening exercise"""
     exercise = db.query(ListeningExercise).filter(ListeningExercise.id == exercise_id).first()
     if not exercise:
@@ -523,6 +586,499 @@ async def delete_listening_exercise(exercise_id: int, db: Session = Depends(get_
     db.commit()
     
     return {"message": "Listening exercise deleted successfully"}
+
+
+# ============== Quiz Set API Routes ==============
+
+@app.get("/api/quiz-sets", response_model=List[QuizSetListResponse])
+async def list_quiz_sets(db: Session = Depends(get_db)):
+    """获取所有题集"""
+    quiz_sets = db.query(QuizSet).order_by(QuizSet.created_at.desc()).all()
+    
+    result = []
+    for qs in quiz_sets:
+        result.append(QuizSetListResponse(
+            id=qs.id,
+            name=qs.name,
+            description=qs.description,
+            is_active=qs.is_active,
+            word_count=len(qs.word_set_items),
+            cloze_count=len(qs.cloze_items),
+            created_at=qs.created_at
+        ))
+    
+    return result
+
+
+@app.get("/api/quiz-sets/{quiz_set_id}", response_model=QuizSetResponse)
+async def get_quiz_set(quiz_set_id: int, db: Session = Depends(get_db)):
+    """获取题集详情"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    # 构建响应
+    word_items = []
+    for item in sorted(quiz_set.word_set_items, key=lambda x: x.order):
+        main_word = next((w for w in item.word_set.words if w.word_type == "main"), None)
+        word_items.append(QuizSetWordItemResponse(
+            id=item.id,
+            word_set_id=item.word_set_id,
+            order=item.order,
+            word_set=WordSetListResponse(
+                id=item.word_set.id,
+                main_word=item.word_set.main_word,
+                main_word_image=main_word.image_local_path if main_word else None,
+                created_at=item.word_set.created_at
+            )
+        ))
+    
+    cloze_items = []
+    for item in sorted(quiz_set.cloze_items, key=lambda x: x.order):
+        cloze_items.append(QuizSetClozeItemResponse(
+            id=item.id,
+            cloze_test_id=item.cloze_test_id,
+            order=item.order,
+            cloze_test=ClozeTestListResponse(
+                id=item.cloze_test.id,
+                word1=item.cloze_test.word1,
+                word2=item.cloze_test.word2,
+                sentence=item.cloze_test.sentence,
+                image_local_path=item.cloze_test.image_local_path,
+                created_at=item.cloze_test.created_at
+            )
+        ))
+    
+    return QuizSetResponse(
+        id=quiz_set.id,
+        name=quiz_set.name,
+        description=quiz_set.description,
+        is_active=quiz_set.is_active,
+        created_at=quiz_set.created_at,
+        updated_at=quiz_set.updated_at,
+        word_set_items=word_items,
+        cloze_items=cloze_items
+    )
+
+
+@app.post("/api/quiz-sets", response_model=QuizSetResponse)
+async def create_quiz_set(request: QuizSetCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """创建题集"""
+    quiz_set = QuizSet(
+        name=request.name,
+        description=request.description
+    )
+    db.add(quiz_set)
+    db.commit()
+    db.refresh(quiz_set)
+    
+    return QuizSetResponse(
+        id=quiz_set.id,
+        name=quiz_set.name,
+        description=quiz_set.description,
+        is_active=quiz_set.is_active,
+        created_at=quiz_set.created_at,
+        updated_at=quiz_set.updated_at,
+        word_set_items=[],
+        cloze_items=[]
+    )
+
+
+@app.put("/api/quiz-sets/{quiz_set_id}", response_model=QuizSetResponse)
+async def update_quiz_set(quiz_set_id: int, request: QuizSetUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """更新题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    if request.name is not None:
+        quiz_set.name = request.name
+    if request.description is not None:
+        quiz_set.description = request.description
+    
+    db.commit()
+    db.refresh(quiz_set)
+    
+    return await get_quiz_set(quiz_set_id, db)
+
+
+@app.delete("/api/quiz-sets/{quiz_set_id}")
+async def delete_quiz_set(quiz_set_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """删除题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    db.delete(quiz_set)
+    db.commit()
+    
+    return {"message": "题集删除成功"}
+
+
+@app.post("/api/quiz-sets/{quiz_set_id}/activate")
+async def activate_quiz_set(quiz_set_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """激活题集（设为当前测验题集）"""
+    # 先将所有题集设为非激活
+    db.query(QuizSet).update({QuizSet.is_active: False})
+    
+    # 激活指定题集
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    quiz_set.is_active = True
+    db.commit()
+    
+    return {"message": f"题集 '{quiz_set.name}' 已激活"}
+
+
+@app.get("/api/quiz-sets/active", response_model=Optional[QuizSetResponse])
+async def get_active_quiz_set(db: Session = Depends(get_db)):
+    """获取当前激活的题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.is_active == True).first()
+    if not quiz_set:
+        return None
+    
+    return await get_quiz_set(quiz_set.id, db)
+
+
+@app.post("/api/quiz-sets/{quiz_set_id}/words", response_model=QuizSetWordItemResponse)
+async def add_word_to_quiz_set(
+    quiz_set_id: int,
+    request: QuizSetWordItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """添加单选题到题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    word_set = db.query(WordSet).filter(WordSet.id == request.word_set_id).first()
+    if not word_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="单词集不存在"
+        )
+    
+    # 检查是否已存在
+    existing = db.query(QuizSetWordItem).filter(
+        QuizSetWordItem.quiz_set_id == quiz_set_id,
+        QuizSetWordItem.word_set_id == request.word_set_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该单词集已在题集中"
+        )
+    
+    # 获取最大顺序
+    max_order = db.query(QuizSetWordItem).filter(
+        QuizSetWordItem.quiz_set_id == quiz_set_id
+    ).count()
+    
+    item = QuizSetWordItem(
+        quiz_set_id=quiz_set_id,
+        word_set_id=request.word_set_id,
+        order=request.order if request.order else max_order
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    
+    main_word = next((w for w in word_set.words if w.word_type == "main"), None)
+    return QuizSetWordItemResponse(
+        id=item.id,
+        word_set_id=item.word_set_id,
+        order=item.order,
+        word_set=WordSetListResponse(
+            id=word_set.id,
+            main_word=word_set.main_word,
+            main_word_image=main_word.image_local_path if main_word else None,
+            created_at=word_set.created_at
+        )
+    )
+
+
+@app.delete("/api/quiz-sets/{quiz_set_id}/words/{item_id}")
+async def remove_word_from_quiz_set(
+    quiz_set_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """从题集中移除单选题"""
+    item = db.query(QuizSetWordItem).filter(
+        QuizSetWordItem.id == item_id,
+        QuizSetWordItem.quiz_set_id == quiz_set_id
+    ).first()
+    
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题目不存在"
+        )
+    
+    db.delete(item)
+    db.commit()
+    
+    return {"message": "题目已移除"}
+
+
+@app.post("/api/quiz-sets/{quiz_set_id}/cloze", response_model=QuizSetClozeItemResponse)
+async def add_cloze_to_quiz_set(
+    quiz_set_id: int,
+    request: QuizSetClozeItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """添加完形填空到题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    cloze_test = db.query(ClozeTest).filter(ClozeTest.id == request.cloze_test_id).first()
+    if not cloze_test:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="完形填空不存在"
+        )
+    
+    # 检查是否已存在
+    existing = db.query(QuizSetClozeItem).filter(
+        QuizSetClozeItem.quiz_set_id == quiz_set_id,
+        QuizSetClozeItem.cloze_test_id == request.cloze_test_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该完形填空已在题集中"
+        )
+    
+    # 获取最大顺序
+    max_order = db.query(QuizSetClozeItem).filter(
+        QuizSetClozeItem.quiz_set_id == quiz_set_id
+    ).count()
+    
+    item = QuizSetClozeItem(
+        quiz_set_id=quiz_set_id,
+        cloze_test_id=request.cloze_test_id,
+        order=request.order if request.order else max_order
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    
+    return QuizSetClozeItemResponse(
+        id=item.id,
+        cloze_test_id=item.cloze_test_id,
+        order=item.order,
+        cloze_test=ClozeTestListResponse(
+            id=cloze_test.id,
+            word1=cloze_test.word1,
+            word2=cloze_test.word2,
+            sentence=cloze_test.sentence,
+            image_local_path=cloze_test.image_local_path,
+            created_at=cloze_test.created_at
+        )
+    )
+
+
+@app.delete("/api/quiz-sets/{quiz_set_id}/cloze/{item_id}")
+async def remove_cloze_from_quiz_set(
+    quiz_set_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """从题集中移除完形填空"""
+    item = db.query(QuizSetClozeItem).filter(
+        QuizSetClozeItem.id == item_id,
+        QuizSetClozeItem.quiz_set_id == quiz_set_id
+    ).first()
+    
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题目不存在"
+        )
+    
+    db.delete(item)
+    db.commit()
+    
+    return {"message": "题目已移除"}
+
+
+@app.put("/api/quiz-sets/{quiz_set_id}/reorder")
+async def reorder_quiz_items(
+    quiz_set_id: int,
+    request: ReorderItemsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """重新排序题目"""
+    if request.word_items:
+        for item_data in request.word_items:
+            item = db.query(QuizSetWordItem).filter(
+                QuizSetWordItem.id == item_data["id"],
+                QuizSetWordItem.quiz_set_id == quiz_set_id
+            ).first()
+            if item:
+                item.order = item_data["order"]
+    
+    if request.cloze_items:
+        for item_data in request.cloze_items:
+            item = db.query(QuizSetClozeItem).filter(
+                QuizSetClozeItem.id == item_data["id"],
+                QuizSetClozeItem.quiz_set_id == quiz_set_id
+            ).first()
+            if item:
+                item.order = item_data["order"]
+    
+    db.commit()
+    
+    return {"message": "排序已更新"}
+
+
+# ============== Test API Routes ==============
+
+@app.get("/api/test/active", response_model=Optional[ActiveTestResponse])
+async def get_active_test(db: Session = Depends(get_db)):
+    """获取当前激活的测验题集（用户端使用）"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.is_active == True).first()
+    if not quiz_set:
+        return None
+    
+    # 获取单选题
+    word_questions = []
+    for item in sorted(quiz_set.word_set_items, key=lambda x: x.order):
+        main_word = next((w for w in item.word_set.words if w.word_type == "main"), None)
+        word_questions.append(WordSetListResponse(
+            id=item.word_set.id,
+            main_word=item.word_set.main_word,
+            main_word_image=main_word.image_local_path if main_word else None,
+            created_at=item.word_set.created_at
+        ))
+    
+    # 获取完形填空题
+    cloze_questions = []
+    for item in sorted(quiz_set.cloze_items, key=lambda x: x.order):
+        cloze_questions.append(ClozeTestListResponse(
+            id=item.cloze_test.id,
+            word1=item.cloze_test.word1,
+            word2=item.cloze_test.word2,
+            sentence=item.cloze_test.sentence,
+            image_local_path=item.cloze_test.image_local_path,
+            created_at=item.cloze_test.created_at
+        ))
+    
+    # 构建完整响应
+    quiz_set_response = await get_quiz_set(quiz_set.id, db)
+    
+    return ActiveTestResponse(
+        quiz_set=quiz_set_response,
+        word_questions=word_questions,
+        cloze_questions=cloze_questions,
+        total_questions=len(word_questions) + len(cloze_questions)
+    )
+
+
+@app.post("/api/test/submit", response_model=TestResultResponse)
+async def submit_test_result(request: TestResultCreate, db: Session = Depends(get_db)):
+    """提交测验结果"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == request.quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    # 计算得分百分比
+    score_percentage = (request.correct_answers / request.total_questions * 100) if request.total_questions > 0 else 0
+    
+    # 将结果转换为 JSON 字符串
+    word_results_json = json.dumps([r.model_dump() for r in request.word_results]) if request.word_results else None
+    cloze_results_json = json.dumps([r.model_dump() for r in request.cloze_results]) if request.cloze_results else None
+    wrong_questions_json = json.dumps([r.model_dump() for r in request.wrong_questions]) if request.wrong_questions else None
+    
+    result = TestResult(
+        quiz_set_id=request.quiz_set_id,
+        quiz_set_name=quiz_set.name,
+        total_questions=request.total_questions,
+        correct_answers=request.correct_answers,
+        score_percentage=score_percentage,
+        word_results=word_results_json,
+        cloze_results=cloze_results_json,
+        wrong_questions=wrong_questions_json
+    )
+    
+    db.add(result)
+    db.commit()
+    db.refresh(result)
+    
+    return TestResultResponse(
+        id=result.id,
+        quiz_set_id=result.quiz_set_id,
+        quiz_set_name=result.quiz_set_name,
+        total_questions=result.total_questions,
+        correct_answers=result.correct_answers,
+        score_percentage=result.score_percentage,
+        word_results=result.word_results,
+        cloze_results=result.cloze_results,
+        wrong_questions=result.wrong_questions,
+        created_at=result.created_at
+    )
+
+
+@app.get("/api/test/results", response_model=List[TestResultListResponse])
+async def list_test_results(db: Session = Depends(get_db)):
+    """获取历史测验结果"""
+    results = db.query(TestResult).order_by(TestResult.created_at.desc()).all()
+    return results
+
+
+@app.get("/api/test/results/{result_id}", response_model=TestResultResponse)
+async def get_test_result(result_id: int, db: Session = Depends(get_db)):
+    """获取测验结果详情"""
+    result = db.query(TestResult).filter(TestResult.id == result_id).first()
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="测验结果不存在"
+        )
+    
+    return TestResultResponse(
+        id=result.id,
+        quiz_set_id=result.quiz_set_id,
+        quiz_set_name=result.quiz_set_name,
+        total_questions=result.total_questions,
+        correct_answers=result.correct_answers,
+        score_percentage=result.score_percentage,
+        word_results=result.word_results,
+        cloze_results=result.cloze_results,
+        wrong_questions=result.wrong_questions,
+        created_at=result.created_at
+    )
 
 
 if __name__ == "__main__":

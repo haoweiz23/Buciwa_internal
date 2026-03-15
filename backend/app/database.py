@@ -39,3 +39,16 @@ def init_db():
                 print("Migration: Added 'meaning' column to words table")
     except Exception as e:
         print(f"Migration check: {e}")
+    
+    # Migration: Add wrong_questions column to test_results table if it doesn't exist
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(test_results)"))
+            columns = [row[1] for row in result.fetchall()]
+            
+            if 'wrong_questions' not in columns:
+                conn.execute(text("ALTER TABLE test_results ADD COLUMN wrong_questions TEXT"))
+                conn.commit()
+                print("Migration: Added 'wrong_questions' column to test_results table")
+    except Exception as e:
+        print(f"Migration check for wrong_questions: {e}")
