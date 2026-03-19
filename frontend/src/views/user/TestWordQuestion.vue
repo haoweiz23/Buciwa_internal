@@ -41,7 +41,7 @@
                   v-if="option.image_local_path"
                   :src="option.image_local_path"
                   :alt="option.word"
-                  class="w-full h-full object-cover"
+                  class="w-full h-full object-contain"
                 />
                 <!-- 正确/错误标记 -->
                 <div

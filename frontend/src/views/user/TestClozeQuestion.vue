@@ -41,12 +41,12 @@
           </div>
           
           <!-- Image -->
-          <div class="aspect-video bg-gray-100 rounded-lg mb-4 overflow-hidden">
+          <div class="w-full bg-gray-100 rounded-lg mb-4 overflow-hidden">
             <img
               v-if="currentQuestion.image_local_path"
               :src="currentQuestion.image_local_path"
               alt="Question image"
-              class="w-full h-full object-cover"
+              class="w-full h-auto object-contain"
             />
           </div>
           

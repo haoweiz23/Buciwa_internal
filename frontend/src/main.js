@@ -9,11 +9,14 @@ import AdminLayout from './views/admin/AdminLayout.vue'
 import AdminHome from './views/admin/AdminHome.vue'
 import AdminWordList from './views/admin/AdminWordList.vue'
 import AdminWordDetail from './views/admin/AdminWordDetail.vue'
+import AdminWordManualCreate from './views/admin/AdminWordManualCreate.vue'
 import AdminClozeList from './views/admin/AdminClozeList.vue'
 import AdminClozeCreate from './views/admin/AdminClozeCreate.vue'
 import AdminClozeDetail from './views/admin/AdminClozeDetail.vue'
+import AdminClozeManualCreate from './views/admin/AdminClozeManualCreate.vue'
 import AdminListeningList from './views/admin/AdminListeningList.vue'
 import AdminListeningCreate from './views/admin/AdminListeningCreate.vue'
+import AdminListeningDetail from './views/admin/AdminListeningDetail.vue'
 import AdminQuizSetList from './views/admin/AdminQuizSetList.vue'
 import AdminQuizSetDetail from './views/admin/AdminQuizSetDetail.vue'
 import AdminTestResults from './views/admin/AdminTestResults.vue'
@@ -45,12 +48,15 @@ const routes = [
     children: [
       { path: '', name: 'admin-home', component: AdminHome },
       { path: 'words', name: 'admin-words', component: AdminWordList },
+      { path: 'words/create', name: 'admin-word-manual-create', component: AdminWordManualCreate },
       { path: 'words/:id', name: 'admin-word-detail', component: AdminWordDetail },
       { path: 'cloze', name: 'admin-cloze', component: AdminClozeList },
       { path: 'cloze/create', name: 'admin-cloze-create', component: AdminClozeCreate },
+      { path: 'cloze/manual-create', name: 'admin-cloze-manual-create', component: AdminClozeManualCreate },
       { path: 'cloze/:id', name: 'admin-cloze-detail', component: AdminClozeDetail },
       { path: 'listening', name: 'admin-listening', component: AdminListeningList },
       { path: 'listening/create', name: 'admin-listening-create', component: AdminListeningCreate },
+      { path: 'listening/:id', name: 'admin-listening-detail', component: AdminListeningDetail },
       { path: 'quiz-sets', name: 'admin-quiz-sets', component: AdminQuizSetList },
       { path: 'quiz-sets/:id', name: 'admin-quiz-set-detail', component: AdminQuizSetDetail },
       { path: 'results', name: 'admin-results', component: AdminTestResults },

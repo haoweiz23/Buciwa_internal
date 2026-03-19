@@ -111,6 +111,7 @@ class QuizSet(Base):
     # 关联
     word_set_items = relationship("QuizSetWordItem", back_populates="quiz_set", cascade="all, delete-orphan")
     cloze_items = relationship("QuizSetClozeItem", back_populates="quiz_set", cascade="all, delete-orphan")
+    listening_items = relationship("QuizSetListeningItem", back_populates="quiz_set", cascade="all, delete-orphan")
 
 
 class QuizSetWordItem(Base):
@@ -137,6 +138,19 @@ class QuizSetClozeItem(Base):
     
     quiz_set = relationship("QuizSet", back_populates="cloze_items")
     cloze_test = relationship("ClozeTest")
+
+
+class QuizSetListeningItem(Base):
+    """题集中的听力题"""
+    __tablename__ = "quiz_set_listening_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=False)
+    listening_exercise_id = Column(Integer, ForeignKey("listening_exercises.id"), nullable=False)
+    order = Column(Integer, default=0)  # 题目顺序
+    
+    quiz_set = relationship("QuizSet", back_populates="listening_items")
+    listening_exercise = relationship("ListeningExercise")
 
 
 class TestResult(Base):

@@ -59,6 +59,11 @@ export const wordSetApi = {
   // Generate a new word set
   generate: (word) => api.post('/word-sets/generate', { word }),
   
+  // Create word set manually
+  createManual: (formData) => api.post('/word-sets/manual', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  
   // Regenerate all words in a word set
   regenerate: (id) => api.post(`/word-sets/${id}/regenerate`),
   
@@ -85,6 +90,11 @@ export const clozeTestApi = {
   
   // Generate a new cloze test
   generate: (word1, word2) => api.post('/cloze-tests/generate', { word1, word2 }),
+  
+  // Create cloze test manually
+  createManual: (formData) => api.post('/cloze-tests/manual', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
   
   // Delete a cloze test
   delete: (id) => api.delete(`/cloze-tests/${id}`)
@@ -144,9 +154,17 @@ export const quizSetApi = {
   removeCloze: (quizSetId, itemId) => 
     api.delete(`/quiz-sets/${quizSetId}/cloze/${itemId}`),
   
+  // Add listening to quiz set
+  addListening: (quizSetId, listeningExerciseId, order) => 
+    api.post(`/quiz-sets/${quizSetId}/listening`, { listening_exercise_id: listeningExerciseId, order }),
+  
+  // Remove listening from quiz set
+  removeListening: (quizSetId, itemId) => 
+    api.delete(`/quiz-sets/${quizSetId}/listening/${itemId}`),
+  
   // Reorder items
-  reorder: (quizSetId, wordItems, clozeItems) => 
-    api.put(`/quiz-sets/${quizSetId}/reorder`, { word_items: wordItems, cloze_items: clozeItems })
+  reorder: (quizSetId, wordItems, clozeItems, listeningItems) => 
+    api.put(`/quiz-sets/${quizSetId}/reorder`, { word_items: wordItems, cloze_items: clozeItems, listening_items: listeningItems })
 }
 
 // ============== Test API ==============

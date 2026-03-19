@@ -155,7 +155,7 @@ def get_cloze_test_with_distractors_prompt(word1: str, word2: str) -> str:
 2. 生成一个包含这两个单词的英文句子，用 ___ 表示空格（两个空格）
 3. 生成两个干扰选项（与句子语境相关但不是正确答案的英语单词）
 4. 干扰选项应该是与主要单词词性相同、但意思不同的词
-5. 生成一个用于生成配图的提示词（中文描述场景）
+5. 生成一个用于生成配图的提示词（中文描述场景），必须包含：Norman Rockwell插画风格，温暖怀旧的美式插画风格，细腻的人物表情和场景细节，特写镜头
 
 请严格按照以下JSON格式返回，不要添加任何其他内容：
 
@@ -171,7 +171,7 @@ def get_cloze_test_with_distractors_prompt(word1: str, word2: str) -> str:
     "distractor2": "干扰词2",
     "distractor1_meaning": "干扰词1的中文释义",
     "distractor2_meaning": "干扰词2的中文释义",
-    "image_prompt": "用于生成配图的中文提示词，描述句子场景"
+    "image_prompt": "用于生成配图的中文提示词，描述句子场景，Norman Rockwell插画风格，特写镜头"
 }}
 ```
 
@@ -179,7 +179,8 @@ def get_cloze_test_with_distractors_prompt(word1: str, word2: str) -> str:
 - 句子应该自然流畅，符合日常使用场景
 - 空格位置应该合理，使得填空练习有意义
 - 干扰词应该有一定的迷惑性，但不能是正确答案
-- 英文句子和中文句子的意思应该对应"""
+- 英文句子和中文句子的意思应该对应
+- 图像提示词必须包含Norman Rockwell插画风格和特写镜头要求"""
 
 
 def get_listening_exercise_prompt(scene_description: str) -> str:

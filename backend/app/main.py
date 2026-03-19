@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.database import get_db, init_db
 from app.models import (
     User, WordSet, Word, ClozeTest, ListeningExercise,
-    QuizSet, QuizSetWordItem, QuizSetClozeItem, TestResult
+    QuizSet, QuizSetWordItem, QuizSetClozeItem, QuizSetListeningItem, TestResult
 )
 from app.schemas import (
     LoginRequest, LoginResponse, UserResponse,
@@ -21,8 +21,8 @@ from app.schemas import (
     ClozeTestCreate, ClozeTestResponse, ClozeTestListResponse,
     ListeningExerciseCreate, ListeningExerciseResponse, ListeningExerciseListResponse,
     QuizSetCreate, QuizSetUpdate, QuizSetResponse, QuizSetListResponse,
-    QuizSetWordItemCreate, QuizSetClozeItemCreate,
-    QuizSetWordItemResponse, QuizSetClozeItemResponse,
+    QuizSetWordItemCreate, QuizSetClozeItemCreate, QuizSetListeningItemCreate,
+    QuizSetWordItemResponse, QuizSetClozeItemResponse, QuizSetListeningItemResponse,
     ReorderItemsRequest,
     TestResultCreate, TestResultResponse, TestResultListResponse,
     ActiveTestResponse
@@ -255,6 +255,93 @@ async def generate_word_set(request: GenerateWordRequest, db: Session = Depends(
         )
 
 
+@app.post("/api/word-sets/manual", response_model=WordSetResponse)
+async def create_word_set_manual(
+    main_word: str = Form(...),
+    main_word_meaning: str = Form(""),
+    similar_word: str = Form(""),
+    similar_word_meaning: str = Form(""),
+    synonym_word: str = Form(""),
+    synonym_word_meaning: str = Form(""),
+    antonym_word: str = Form(""),
+    antonym_word_meaning: str = Form(""),
+    main_word_image: Optional[UploadFile] = File(None),
+    similar_word_image: Optional[UploadFile] = File(None),
+    synonym_word_image: Optional[UploadFile] = File(None),
+    antonym_word_image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Manually create a word set with uploaded images"""
+    try:
+        # Create word set
+        word_set = WordSet(main_word=main_word)
+        db.add(word_set)
+        db.commit()
+        db.refresh(word_set)
+        
+        # Helper function to save uploaded image
+        async def save_uploaded_image(upload_file: UploadFile, word: str):
+            if not upload_file or not upload_file.filename:
+                return {"image_url": "", "local_path": ""}
+            
+            # Save the file
+            file_ext = os.path.splitext(upload_file.filename)[1]
+            safe_word = "".join(c for c in word if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            filename = f"{safe_word}_{random.randint(1000, 9999)}{file_ext}"
+            
+            # Ensure directory exists
+            images_dir = "backend/static/images"
+            os.makedirs(images_dir, exist_ok=True)
+            
+            file_path = os.path.join(images_dir, filename)
+            
+            # Write file
+            content = await upload_file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            
+            return {
+                "image_url": f"/static/images/{filename}",
+                "local_path": f"/static/images/{filename}"
+            }
+        
+        # Prepare words data
+        words_data = [
+            {"word": main_word, "type": "main", "meaning": main_word_meaning, "image_file": main_word_image},
+            {"word": similar_word, "type": "similar", "meaning": similar_word_meaning, "image_file": similar_word_image},
+            {"word": synonym_word, "type": "synonym", "meaning": synonym_word_meaning, "image_file": synonym_word_image},
+            {"word": antonym_word, "type": "antonym", "meaning": antonym_word_meaning, "image_file": antonym_word_image},
+        ]
+        
+        # Save images and create words
+        for word_data in words_data:
+            if word_data["word"]:  # Only create if word is provided
+                image_result = await save_uploaded_image(word_data["image_file"], word_data["word"])
+                
+                word = Word(
+                    word_set_id=word_set.id,
+                    word=word_data["word"],
+                    word_type=word_data["type"],
+                    meaning=word_data["meaning"],
+                    image_url=image_result.get("image_url", ""),
+                    image_local_path=image_result.get("local_path", "")
+                )
+                db.add(word)
+        
+        db.commit()
+        db.refresh(word_set)
+        
+        return word_set
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating word set: {str(e)}"
+        )
+
+
 @app.post("/api/words/{word_id}/regenerate-image", response_model=WordResponse)
 async def regenerate_word_image(word_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Regenerate image for a specific word"""
@@ -399,6 +486,78 @@ async def get_cloze_test(cloze_test_id: int, db: Session = Depends(get_db)):
             detail="Cloze test not found"
         )
     return cloze_test
+
+
+@app.post("/api/cloze-tests/manual", response_model=ClozeTestResponse)
+async def create_cloze_test_manual(
+    word1: str = Form(...),
+    word2: str = Form(...),
+    word1_meaning: str = Form(""),
+    word2_meaning: str = Form(""),
+    distractor1: str = Form(""),
+    distractor2: str = Form(""),
+    distractor1_meaning: str = Form(""),
+    distractor2_meaning: str = Form(""),
+    sentence: str = Form(...),
+    sentence_with_answers: str = Form(...),
+    sentence_en: str = Form(""),
+    sentence_with_answers_en: str = Form(""),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Manually create a cloze test with uploaded image"""
+    try:
+        image_url = ""
+        image_local_path = ""
+        
+        # Save uploaded image if provided
+        if image and image.filename:
+            file_ext = os.path.splitext(image.filename)[1]
+            safe_word1 = "".join(c for c in word1 if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_word2 = "".join(c for c in word2 if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            filename = f"cloze_{safe_word1}_{safe_word2}_{random.randint(1000, 9999)}{file_ext}"
+            
+            images_dir = "backend/static/images"
+            os.makedirs(images_dir, exist_ok=True)
+            
+            file_path = os.path.join(images_dir, filename)
+            content = await image.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            
+            image_url = f"/static/images/{filename}"
+            image_local_path = f"/static/images/{filename}"
+        
+        # Create cloze test
+        cloze_test = ClozeTest(
+            word1=word1,
+            word2=word2,
+            word1_meaning=word1_meaning,
+            word2_meaning=word2_meaning,
+            distractor1=distractor1,
+            distractor2=distractor2,
+            distractor1_meaning=distractor1_meaning,
+            distractor2_meaning=distractor2_meaning,
+            sentence=sentence,
+            sentence_with_answers=sentence_with_answers,
+            sentence_en=sentence_en,
+            sentence_with_answers_en=sentence_with_answers_en,
+            image_url=image_url,
+            image_local_path=image_local_path
+        )
+        db.add(cloze_test)
+        db.commit()
+        db.refresh(cloze_test)
+        
+        return cloze_test
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating cloze test: {str(e)}"
+        )
 
 
 @app.post("/api/cloze-tests/generate", response_model=ClozeTestResponse)
@@ -604,6 +763,7 @@ async def list_quiz_sets(db: Session = Depends(get_db)):
             is_active=qs.is_active,
             word_count=len(qs.word_set_items),
             cloze_count=len(qs.cloze_items),
+            listening_count=len(qs.listening_items),
             created_at=qs.created_at
         ))
     
@@ -652,6 +812,22 @@ async def get_quiz_set(quiz_set_id: int, db: Session = Depends(get_db)):
             )
         ))
     
+    listening_items = []
+    for item in sorted(quiz_set.listening_items, key=lambda x: x.order):
+        listening_items.append(QuizSetListeningItemResponse(
+            id=item.id,
+            listening_exercise_id=item.listening_exercise_id,
+            order=item.order,
+            listening_exercise=ListeningExerciseListResponse(
+                id=item.listening_exercise.id,
+                scene_description=item.listening_exercise.scene_description,
+                generated_text=item.listening_exercise.generated_text,
+                image_local_path=item.listening_exercise.image_local_path,
+                audio_local_path=item.listening_exercise.audio_local_path,
+                created_at=item.listening_exercise.created_at
+            )
+        ))
+    
     return QuizSetResponse(
         id=quiz_set.id,
         name=quiz_set.name,
@@ -660,7 +836,8 @@ async def get_quiz_set(quiz_set_id: int, db: Session = Depends(get_db)):
         created_at=quiz_set.created_at,
         updated_at=quiz_set.updated_at,
         word_set_items=word_items,
-        cloze_items=cloze_items
+        cloze_items=cloze_items,
+        listening_items=listening_items
     )
 
 
@@ -683,7 +860,8 @@ async def create_quiz_set(request: QuizSetCreate, db: Session = Depends(get_db),
         created_at=quiz_set.created_at,
         updated_at=quiz_set.updated_at,
         word_set_items=[],
-        cloze_items=[]
+        cloze_items=[],
+        listening_items=[]
     )
 
 
@@ -929,6 +1107,94 @@ async def remove_cloze_from_quiz_set(
     return {"message": "题目已移除"}
 
 
+@app.post("/api/quiz-sets/{quiz_set_id}/listening", response_model=QuizSetListeningItemResponse)
+async def add_listening_to_quiz_set(
+    quiz_set_id: int,
+    request: QuizSetListeningItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """添加听力题到题集"""
+    quiz_set = db.query(QuizSet).filter(QuizSet.id == quiz_set_id).first()
+    if not quiz_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题集不存在"
+        )
+    
+    listening_exercise = db.query(ListeningExercise).filter(ListeningExercise.id == request.listening_exercise_id).first()
+    if not listening_exercise:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="听力练习不存在"
+        )
+    
+    # 检查是否已存在
+    existing = db.query(QuizSetListeningItem).filter(
+        QuizSetListeningItem.quiz_set_id == quiz_set_id,
+        QuizSetListeningItem.listening_exercise_id == request.listening_exercise_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该听力练习已在题集中"
+        )
+    
+    # 获取最大顺序
+    max_order = db.query(QuizSetListeningItem).filter(
+        QuizSetListeningItem.quiz_set_id == quiz_set_id
+    ).count()
+    
+    item = QuizSetListeningItem(
+        quiz_set_id=quiz_set_id,
+        listening_exercise_id=request.listening_exercise_id,
+        order=request.order if request.order else max_order
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    
+    return QuizSetListeningItemResponse(
+        id=item.id,
+        listening_exercise_id=item.listening_exercise_id,
+        order=item.order,
+        listening_exercise=ListeningExerciseListResponse(
+            id=listening_exercise.id,
+            scene_description=listening_exercise.scene_description,
+            generated_text=listening_exercise.generated_text,
+            image_local_path=listening_exercise.image_local_path,
+            audio_local_path=listening_exercise.audio_local_path,
+            created_at=listening_exercise.created_at
+        )
+    )
+
+
+@app.delete("/api/quiz-sets/{quiz_set_id}/listening/{item_id}")
+async def remove_listening_from_quiz_set(
+    quiz_set_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """从题集中移除听力题"""
+    item = db.query(QuizSetListeningItem).filter(
+        QuizSetListeningItem.id == item_id,
+        QuizSetListeningItem.quiz_set_id == quiz_set_id
+    ).first()
+    
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题目不存在"
+        )
+    
+    db.delete(item)
+    db.commit()
+    
+    return {"message": "题目已移除"}
+
+
 @app.put("/api/quiz-sets/{quiz_set_id}/reorder")
 async def reorder_quiz_items(
     quiz_set_id: int,
@@ -951,6 +1217,15 @@ async def reorder_quiz_items(
             item = db.query(QuizSetClozeItem).filter(
                 QuizSetClozeItem.id == item_data["id"],
                 QuizSetClozeItem.quiz_set_id == quiz_set_id
+            ).first()
+            if item:
+                item.order = item_data["order"]
+    
+    if request.listening_items:
+        for item_data in request.listening_items:
+            item = db.query(QuizSetListeningItem).filter(
+                QuizSetListeningItem.id == item_data["id"],
+                QuizSetListeningItem.quiz_set_id == quiz_set_id
             ).first()
             if item:
                 item.order = item_data["order"]
@@ -992,6 +1267,70 @@ async def get_active_test(db: Session = Depends(get_db)):
             created_at=item.cloze_test.created_at
         ))
     
+    # 构建统一排序的题目列表
+    ordered_questions = []
+    
+    # 收集所有题目及其顺序
+    all_items = []
+    for item in quiz_set.word_set_items:
+        main_word = next((w for w in item.word_set.words if w.word_type == "main"), None)
+        all_items.append({
+            'type': 'word',
+            'order': item.order,
+            'item_id': item.word_set_id,
+            'data': WordSetListResponse(
+                id=item.word_set.id,
+                main_word=item.word_set.main_word,
+                main_word_image=main_word.image_local_path if main_word else None,
+                created_at=item.word_set.created_at
+            )
+        })
+    
+    for item in quiz_set.cloze_items:
+        all_items.append({
+            'type': 'cloze',
+            'order': item.order,
+            'item_id': item.cloze_test_id,
+            'data': ClozeTestListResponse(
+                id=item.cloze_test.id,
+                word1=item.cloze_test.word1,
+                word2=item.cloze_test.word2,
+                sentence=item.cloze_test.sentence,
+                image_local_path=item.cloze_test.image_local_path,
+                created_at=item.cloze_test.created_at
+            )
+        })
+    
+    for item in quiz_set.listening_items:
+        all_items.append({
+            'type': 'listening',
+            'order': item.order,
+            'item_id': item.listening_exercise_id,
+            'data': ListeningExerciseListResponse(
+                id=item.listening_exercise.id,
+                scene_description=item.listening_exercise.scene_description,
+                generated_text=item.listening_exercise.generated_text,
+                image_local_path=item.listening_exercise.image_local_path,
+                audio_local_path=item.listening_exercise.audio_local_path,
+                created_at=item.listening_exercise.created_at
+            )
+        })
+    
+    # 按顺序排序
+    all_items.sort(key=lambda x: x['order'])
+    
+    # 构建统一题目列表
+    for item in all_items:
+        from app.schemas import UnifiedQuestionItem
+        ordered_questions.append(UnifiedQuestionItem(
+            type=item['type'],
+            order=item['order'],
+            item_id=item['item_id'],
+            word_data=item['data'] if item['type'] == 'word' else None,
+            cloze_data=item['data'] if item['type'] == 'cloze' else None,
+            listening_data=item['data'] if item['type'] == 'listening' else None
+        ))
+    
     # 构建完整响应
     quiz_set_response = await get_quiz_set(quiz_set.id, db)
     
@@ -999,7 +1338,8 @@ async def get_active_test(db: Session = Depends(get_db)):
         quiz_set=quiz_set_response,
         word_questions=word_questions,
         cloze_questions=cloze_questions,
-        total_questions=len(word_questions) + len(cloze_questions)
+        ordered_questions=ordered_questions,
+        total_questions=len(ordered_questions)
     )
 
 

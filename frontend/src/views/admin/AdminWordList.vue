@@ -27,7 +27,7 @@
       <div
         v-for="ws in wordSets"
         :key="ws.id"
-        class="bg-white rounded-xl shadow overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+        class="bg-white rounded-xl shadow overflow-hidden hover:shadow-md transition-shadow cursor-pointer relative group"
         @click="goToDetail(ws.id)"
       >
         <div class="flex">
@@ -49,6 +49,16 @@
             <p class="text-gray-400 text-xs mt-1">{{ formatDate(ws.created_at) }}</p>
           </div>
         </div>
+        <!-- Delete Button -->
+        <button
+          @click.stop="deleteWordSet(ws.id)"
+          class="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all shadow-lg"
+          title="删除"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
     </div>
     
@@ -78,19 +88,37 @@
           </button>
         </div>
         <p v-if="error" class="mb-4 text-red-500 text-sm text-center">{{ error }}</p>
-        <div class="flex gap-3">
-          <button
-            @click="showCreateModal = false"
-            class="flex-1 px-4 py-3 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            取消
-          </button>
+        
+        <div class="flex flex-col gap-3">
           <button
             @click="generateWord"
             :disabled="!newWord.trim() || isGenerating"
-            class="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 transition-colors"
+            class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 transition-colors"
           >
-            {{ isGenerating ? '生成中...' : '生成' }}
+            {{ isGenerating ? '生成中...' : 'AI 生成' }}
+          </button>
+          
+          <div class="relative">
+            <div class="absolute inset-0 flex items-center">
+              <div class="w-full border-t border-gray-200"></div>
+            </div>
+            <div class="relative flex justify-center text-sm">
+              <span class="px-2 bg-white text-gray-500">或者</span>
+            </div>
+          </div>
+          
+          <button
+            @click="goToManualCreate"
+            class="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border-2 border-gray-200"
+          >
+            手动创建（自行上传单词和图片）
+          </button>
+          
+          <button
+            @click="showCreateModal = false"
+            class="w-full px-4 py-2 text-gray-500 hover:text-gray-700 transition-colors text-sm"
+          >
+            取消
           </button>
         </div>
       </div>
@@ -157,6 +185,22 @@ const rollDice = async () => {
 
 const goToDetail = (id) => {
   router.push({ name: 'admin-word-detail', params: { id } })
+}
+
+const goToManualCreate = () => {
+  showCreateModal.value = false
+  router.push({ name: 'admin-word-manual-create' })
+}
+
+const deleteWordSet = async (id) => {
+  if (!confirm('确定要删除这道单选题吗？此操作不可撤销。')) return
+  try {
+    await wordSetApi.delete(id)
+    await fetchWordSets()
+  } catch (e) {
+    console.error(e)
+    alert('删除失败')
+  }
 }
 
 const formatDate = (dateString) => {

@@ -42,12 +42,12 @@
     <div v-else-if="clozeTest" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Image -->
       <div class="bg-white rounded-xl shadow overflow-hidden">
-        <div class="aspect-video bg-gray-100">
+        <div class="bg-gray-100 flex items-center justify-center">
           <img
             v-if="clozeTest.image_local_path"
             :src="clozeTest.image_local_path"
             alt="Question Image"
-            class="w-full h-full object-cover"
+            class="max-w-full max-h-[600px] object-contain"
           />
           <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
             <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">

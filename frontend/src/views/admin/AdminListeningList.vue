@@ -27,7 +27,8 @@
       <div
         v-for="exercise in exercises"
         :key="exercise.id"
-        class="bg-white rounded-xl shadow overflow-hidden hover:shadow-md transition-shadow"
+        @click="goToDetail(exercise.id)"
+        class="bg-white rounded-xl shadow overflow-hidden hover:shadow-md transition-shadow cursor-pointer relative group"
       >
         <div class="flex">
           <div class="w-32 h-32 flex-shrink-0 bg-gray-100">
@@ -48,6 +49,16 @@
             <p class="text-gray-400 text-xs mt-2">{{ formatDate(exercise.created_at) }}</p>
           </div>
         </div>
+        <!-- Delete Button -->
+        <button
+          @click.stop="deleteExercise(exercise.id)"
+          class="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all shadow-lg"
+          title="删除"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
     </div>
   </div>
@@ -76,6 +87,21 @@ const fetchExercises = async () => {
 
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('zh-CN')
+}
+
+const goToDetail = (id) => {
+  router.push({ name: 'admin-listening-detail', params: { id } })
+}
+
+const deleteExercise = async (id) => {
+  if (!confirm('确定要删除这道听力题吗？此操作不可撤销。')) return
+  try {
+    await listeningExerciseApi.delete(id)
+    await fetchExercises()
+  } catch (e) {
+    console.error(e)
+    alert('删除失败')
+  }
 }
 
 onMounted(() => {

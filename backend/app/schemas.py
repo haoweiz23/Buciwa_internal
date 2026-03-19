@@ -211,6 +211,11 @@ class QuizSetClozeItemCreate(BaseModel):
     order: Optional[int] = 0
 
 
+class QuizSetListeningItemCreate(BaseModel):
+    listening_exercise_id: int
+    order: Optional[int] = 0
+
+
 class QuizSetWordItemResponse(BaseModel):
     id: int
     word_set_id: int
@@ -231,6 +236,16 @@ class QuizSetClozeItemResponse(BaseModel):
         from_attributes = True
 
 
+class QuizSetListeningItemResponse(BaseModel):
+    id: int
+    listening_exercise_id: int
+    order: int
+    listening_exercise: ListeningExerciseListResponse
+
+    class Config:
+        from_attributes = True
+
+
 class QuizSetResponse(QuizSetBase):
     id: int
     is_active: bool
@@ -238,6 +253,7 @@ class QuizSetResponse(QuizSetBase):
     updated_at: datetime
     word_set_items: List[QuizSetWordItemResponse] = []
     cloze_items: List[QuizSetClozeItemResponse] = []
+    listening_items: List[QuizSetListeningItemResponse] = []
 
     class Config:
         from_attributes = True
@@ -250,6 +266,7 @@ class QuizSetListResponse(BaseModel):
     is_active: bool
     word_count: int = 0
     cloze_count: int = 0
+    listening_count: int = 0
     created_at: datetime
 
     class Config:
@@ -259,6 +276,7 @@ class QuizSetListResponse(BaseModel):
 class ReorderItemsRequest(BaseModel):
     word_items: Optional[List[dict]] = None  # [{"id": 1, "order": 1}, ...]
     cloze_items: Optional[List[dict]] = None
+    listening_items: Optional[List[dict]] = None
 
 
 # ============== Test Result Schemas ==============
@@ -283,9 +301,16 @@ class ClozeResultItem(BaseModel):
     is_correct: bool
 
 
+class ListeningResultItem(BaseModel):
+    """听力练习结果项"""
+    listening_exercise_id: int
+    scene_description: Optional[str] = None
+    completed: bool  # 听力题只记录是否完成，不判断对错
+
+
 class WrongQuestionItem(BaseModel):
     """错误题目项"""
-    question_type: str  # 'word' or 'cloze'
+    question_type: str  # 'word', 'cloze', or 'listening'
     question_id: int
     main_word: Optional[str] = None  # for word questions
     sentence: Optional[str] = None  # for cloze questions
@@ -299,6 +324,7 @@ class TestResultCreate(BaseModel):
     correct_answers: int
     word_results: Optional[List[WordResultItem]] = None
     cloze_results: Optional[List[ClozeResultItem]] = None
+    listening_results: Optional[List[ListeningResultItem]] = None
     wrong_questions: Optional[List[WrongQuestionItem]] = None
 
 
@@ -335,9 +361,20 @@ class TestResultListResponse(BaseModel):
 
 # ============== Active Test Schemas ==============
 
+class UnifiedQuestionItem(BaseModel):
+    """统一的题目项，用于按顺序展示题目"""
+    type: str  # 'word', 'cloze', 'listening'
+    order: int
+    item_id: int  # word_set_id, cloze_test_id, or listening_exercise_id
+    word_data: Optional[WordSetListResponse] = None
+    cloze_data: Optional[ClozeTestListResponse] = None
+    listening_data: Optional[ListeningExerciseListResponse] = None
+
+
 class ActiveTestResponse(BaseModel):
     """当前激活的测验题集信息"""
     quiz_set: QuizSetResponse
     word_questions: List[WordSetListResponse]
     cloze_questions: List[ClozeTestListResponse]
+    ordered_questions: List[UnifiedQuestionItem]  # 新增：按顺序排列的所有题目
     total_questions: int
