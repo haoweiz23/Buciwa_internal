@@ -9,10 +9,7 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
-  server: {
-    port: 3001,
-    host: '0.0.0.0',
-    allowedHosts: ['nonjuristic-unrevokable-keith.ngrok-free.dev', '.trycloudflare.com'],
+    allowedHosts: ['nonjuristic-unrevokable-keith.ngrok-free.dev', '.trycloudflare.com', 'internal.buciwa.com'],
     hmr: {
       host: '0.0.0.0',
       protocol: 'ws'
@@ -28,4 +25,4 @@ export default defineConfig({
       }
     }
   }
-})
+)

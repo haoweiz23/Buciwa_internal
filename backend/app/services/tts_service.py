@@ -173,7 +173,8 @@ class TTSService:
         self.voice_type = settings.volcano_voice_type
         self.endpoint = "wss://openspeech.bytedance.com/api/v1/tts/ws_binary"
         # Create audio directory if it doesn't exist
-        self.audio_dir = Path("backend/static/audio")
+        # Use relative path from working directory (backend/)
+        self.audio_dir = Path("static/audio")
         self.audio_dir.mkdir(parents=True, exist_ok=True)
     
     def _get_cluster(self, voice: str) -> str:
@@ -315,7 +316,8 @@ class TTSService:
         if relative_path:
             # Remove /static/ prefix if present
             clean_path = relative_path.replace("/static/", "")
-            full_path = Path("backend/static") / clean_path
+            # Use relative path from working directory (backend/)
+            full_path = Path("static") / clean_path
             if full_path.exists():
                 return str(full_path)
         return None

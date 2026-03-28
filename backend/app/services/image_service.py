@@ -20,7 +20,8 @@ class ImageService:
         )
         self.model = settings.image_model
         # Create images directory if it doesn't exist
-        self.images_dir = Path("backend/static/images")
+        # Use relative path from working directory (backend/)
+        self.images_dir = Path("static/images")
         self.images_dir.mkdir(parents=True, exist_ok=True)
     
     def generate_image(self, prompt: str, word: str) -> dict:
@@ -82,7 +83,8 @@ class ImageService:
         if relative_path:
             # Remove /static/ prefix if present
             clean_path = relative_path.replace("/static/", "")
-            full_path = Path("backend/static") / clean_path
+            # Use relative path from working directory (backend/)
+            full_path = Path("static") / clean_path
             if full_path.exists():
                 return str(full_path)
         return None

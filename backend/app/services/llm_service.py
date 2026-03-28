@@ -1,7 +1,7 @@
 import json
 from openai import OpenAI
 from app.config import get_settings
-from app.prompts import get_word_generation_prompt, get_single_image_prompt, get_cloze_test_prompt, get_listening_exercise_prompt, get_cloze_test_with_distractors_prompt
+from app.prompts import get_word_generation_prompt, get_single_image_prompt, get_cloze_test_prompt, get_listening_exercise_prompt
 
 settings = get_settings()
 
@@ -119,62 +119,12 @@ class LLMService:
     
     def generate_cloze_test(self, word1: str, word2: str) -> dict:
         """
-        Generate a cloze test with two words.
-        
-        Args:
-            word1: First English word
-            word2: Second English word
-        
-        Returns:
-            dict: {
-                "sentence": str,  # Chinese sentence with blanks
-                "sentence_with_answers": str,  # Complete sentence
-                "image_prompt": str,  # Image generation prompt
-                "word1_meaning": str,  # Chinese meaning of word1
-                "word2_meaning": str   # Chinese meaning of word2
-            }
-        """
-        prompt = get_cloze_test_prompt(word1, word2)
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        
-        content = response.choices[0].message.content
-        
-        try:
-            # Try to extract JSON from the response
-            content = content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-            
-            result = json.loads(content)
-            return result
-            
-        except json.JSONDecodeError as e:
-            raise Exception(f"Failed to parse LLM response as JSON: {e}\nResponse: {content}")
-    
-    def generate_cloze_test_with_distractors(self, word1: str, word2: str) -> dict:
-        """
         Generate a cloze test with two main words and two distractor words.
         Generates both Chinese and English sentences.
         
         Args:
-            word1: First English word (main)
-            word2: Second English word (main)
+            word1: First English word
+            word2: Second English word
         
         Returns:
             dict: {
@@ -191,7 +141,7 @@ class LLMService:
                 "image_prompt": str
             }
         """
-        prompt = get_cloze_test_with_distractors_prompt(word1, word2)
+        prompt = get_cloze_test_prompt(word1, word2)
 
         response = self.client.chat.completions.create(
             model=self.model,

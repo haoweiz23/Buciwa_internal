@@ -54,11 +54,12 @@ app.add_middleware(
 )
 
 # Mount static files for images
-static_dir = "backend/static/images"
+# Use relative path from working directory (backend/)
+static_dir = "static/images"
 os.makedirs(static_dir, exist_ok=True)
-audio_dir = "backend/static/audio"
+audio_dir = "static/audio"
 os.makedirs(audio_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Thread pool for running sync operations
 executor = ThreadPoolExecutor(max_workers=4)
@@ -571,7 +572,7 @@ async def generate_cloze_test(request: ClozeTestCreate, db: Session = Depends(ge
     """
     try:
         # Step 1: Call LLM to generate cloze test content (with distractors and English sentence)
-        llm_result = await run_sync(llm_service.generate_cloze_test_with_distractors, request.word1, request.word2)
+        llm_result = await run_sync(llm_service.generate_cloze_test, request.word1, request.word2)
         
         # Step 2: Create cloze test in database
         cloze_test = ClozeTest(

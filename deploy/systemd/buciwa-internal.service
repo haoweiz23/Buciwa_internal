@@ -1,0 +1,15 @@
+[Unit]
+Description=Buciwa Internal Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/buciwa_internal/backend
+Environment="PATH=/var/www/buciwa_internal/backend/venv/bin"
+ExecStart=/var/www/buciwa_internal/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
